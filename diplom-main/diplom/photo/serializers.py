@@ -32,7 +32,7 @@ class CommentSerializers(serializers.ModelSerializer):
 class PostSerializers(serializers.ModelSerializer):
     location = serializers.SerializerMethodField()
     comment = CommentSerializers(many=True, read_only=True)
-    image = ImageSerializers(many=True, read_only=True, source='image')
+    images = serializers.ListField(child=serializers.ImageField(), write_only=True, required=False)
     like_count = serializers.IntegerField(read_only=True)
     location_name = serializers.CharField(read_only=True)
 

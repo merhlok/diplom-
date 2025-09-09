@@ -12,7 +12,7 @@ from .serializers import CommentSerializers, PostSerializers
 
 
 class PostViewSet(ModelViewSet):
-    queryset = Post.objects.annotate(like_count=Count('like'))
+    queryset = Post.objects.all()
     serializer_class = PostSerializers
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
