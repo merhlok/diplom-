@@ -1,7 +1,11 @@
 from rest_framework import serializers
 from .models import Post, Comment, ImageModel
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderUnavailable, GeocoderTimedOut
+import logging
+from geopy.geocoders import Nominatim
 
+logger = logging.getLogger(__name__)
 
 class ImageSerializers(serializers.ModelSerializer):
     class Meta:
@@ -11,9 +15,18 @@ class ImageSerializers(serializers.ModelSerializer):
 
 class LocationSerializer(serializers.Serializer):
     def to_representation(self, instance):
-        geolocator = Nominatim(user_agent="social_network")
-        location = geolocator.reverse((instance.latitude, instance.longitude))
-        return location.address
+        lat = getattr(instance, 'latitude', None)
+        lon = getattr(instance, 'longitude', None)
+        if lat is None or lon is None:
+            return None
+
+        geolocator = Nominatim(user_agent="social_network", timeout=10)
+        try:
+            location = geolocator.reverse((lat, lon))
+            return location.address if location else None
+        except (GeocoderTimedOut, GeocoderUnavailable) as e:
+            logger.warning("Geocoding failed for (%s,%s): %s", lat, lon, e)
+        return None
 
 
 
@@ -32,14 +45,15 @@ class CommentSerializers(serializers.ModelSerializer):
 class PostSerializers(serializers.ModelSerializer):
     location = serializers.SerializerMethodField()
     comment = CommentSerializers(many=True, read_only=True)
-    images = serializers.ListField(child=serializers.ImageField(), write_only=True, required=False)
+    images = ImageSerializers(many=True, read_only=True)
+    uploaded_images = serializers.ListField(child=serializers.ImageField(), write_only=True, required=False)
     like_count = serializers.IntegerField(read_only=True)
     location_name = serializers.CharField(read_only=True)
 
     class Meta:
         model = Post
         fields = [
-            'id', 'user', 'text', 'created_at', 'image',
+            'id', 'user', 'text', 'created_at', 'images', 'uploaded_images',
             'comment', 'like_count', 'location_query',
             'latitude', 'longitude', 'location_name', 'location',
         ]
@@ -50,9 +64,26 @@ class PostSerializers(serializers.ModelSerializer):
         }
 
     def get_location(self, obj):
-        return LocationSerializer(obj).data
+        """
+        Вызываем to_representation напрямую, чтобы не оборачивать
+        результат в ReturnDict (который ожидает маппинг).
+        Возвращаем строку адреса или None.
+        """
+        try:
+            # используем экземпляр сериализатора без .data
+            loc = LocationSerializer().to_representation(obj)
+            # loc может быть строкой либо None — оба корректны
+            return loc
+        except (GeocoderTimedOut, GeocoderUnavailable) as e:
+            logger.warning("Geocoding failed for post id=%s: %s", getattr(obj, "id", None), e)
+            return None
+        except Exception:
+            logger.exception("Unexpected error during location serialization for post id=%s", getattr(obj, "id", None))
+            return None
     
-    def validate_image(self, image):
-        if not image.name.lower().endswith(('.png', '.jpg', '.jpeg')):
-            raise serializers.ValidationError("Поддерживаются только PNG, JPG и JPEG.")
-        return image
+    def create(self, validated_data):
+        images_data = validated_data.pop('uploaded_images', [])
+        post = Post.objects.create(**validated_data)
+        for image in images_data:
+            ImageModel.objects.create(post=post, image=image)
+        return post

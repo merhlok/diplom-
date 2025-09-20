@@ -78,7 +78,7 @@ class Comment(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comment')
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    pass
+
 
 
 class Like(models.Model):
@@ -96,6 +96,6 @@ class Like(models.Model):
 
 
 class ImageModel(models.Model):
-    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='image')
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='images')
     image = models.ImageField(upload_to='posts/images/', verbose_name='Изображение')
-    pass
+
